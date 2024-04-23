@@ -1,0 +1,418 @@
+---
+title: "Analysis"
+author: "B238026"
+date: "2024-03-24"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r}
+# Import some packages to support research
+library(tidyverse) # Load dplyr, ggplot2 and others.
+library(readr) # More informative and easy way to import data.
+library(stringr) # To handle text elements.
+library(tidytext) # Includes set of functions useful for manipulating text.
+library(quanteda) # Includes functions to implement Lexicoder.
+library(textdata) # Manage text data sets.
+```
+
+```{r}
+# Import the data downloaded in 1DataCollection.Rmd.
+newspaper_cn <- readRDS("cn2023news.rds") # Import the news reported by the New York Times 2023 on China.
+newspaper_gb <- readRDS("gb2023news.rds") # Import the news reported by the New York Times 2023 on UK.
+```
+
+```{r}
+# Retain the variables needed for research.
+newspaper_cn <- newspaper_cn %>% # Use newspaper_cn data frame.
+  select(headline, pub_date) %>% # Select the headline and pub_date columns in the data frame.
+  rename(newspaper_title = headline, # Rename the headline column to newspaper_title.
+         newspaper_time = pub_date) # Rename the pub_date column to newspaper_time.
+
+# The functionality of the code below is the same as above.
+newspaper_gb <- newspaper_gb %>%
+  select(headline, pub_date) %>% 
+  rename(newspaper_title = headline,
+         newspaper_time = pub_date)
+```
+
+```{r}
+# Processing data into a neat format.
+newspaper_cn_title_tidy <- newspaper_cn %>% # Use the newspaper_cn data framework and save to newspaper_cn_title_tidy.
+  mutate(desc = tolower(newspaper_title)) %>% # Add a new column desc to the dataframe, which is the lowercase version of the newspaper_title column.
+  unnest_tokens(word, desc) %>% # Use the unnest_tokens function to split the text in the desc column into words and store the result in a new column word.
+  filter(str_detect(word, "[a-z]")) # Filter word columns for rows containing only English letters.
+
+# The functionality of the code below is the same as above.
+newspaper_gb_title_tidy <- newspaper_gb %>%
+  mutate(desc = tolower(newspaper_title)) %>% 
+  unnest_tokens(word, desc) %>%
+  filter(str_detect(word, "[a-z]"))
+```
+
+```{r}
+# Removing stop words.
+newspaper_cn_title_tidy <- newspaper_cn_title_tidy %>% # Use the newspaper_cn_title_tidy data framework.
+    filter(!word %in% stop_words$word) # Use the filter function to exclude words that appear in the word column of the stop_words data frame.
+
+# The functionality of the code below is the same as above.
+newspaper_gb_title_tidy <- newspaper_gb_title_tidy %>%
+    filter(!word %in% stop_words$word) 
+```
+
+```{r}
+# Arrange the data in ascending order of date.
+newspaper_cn_title_tidy$date <- as.Date(newspaper_cn_title_tidy$newspaper_time) # Convert the data in column 'newspaper_time' to date format and create new column 'date'
+newspaper_cn_title_tidy <- newspaper_cn_title_tidy %>% # Use the newspaper_cn_title_tidy data framework.
+  arrange(date) # Sort the data frame according to the 'date' column.
+newspaper_cn_title_tidy$order <- 1:nrow(newspaper_cn_title_tidy) # Add an 'order' column to the data frame, with values starting at 1 and continuing backwards.
+
+# The functionality of the code below is the same as above.
+newspaper_gb_title_tidy$date <- as.Date(newspaper_gb_title_tidy$newspaper_time)
+newspaper_gb_title_tidy <- newspaper_gb_title_tidy %>%
+  arrange(date)
+newspaper_gb_title_tidy$order <- 1:nrow(newspaper_gb_title_tidy)
+```
+
+```{r}
+# Conducting sentiment analyses.
+newspaper_cn_nrc_sentiment <- newspaper_cn_title_tidy %>% # The data is processed and written to newspaper_cn_nrc_sentiment.
+  inner_join(get_sentiments("nrc")) %>% # Inline the 'newspaper_cn_title_tidy' dataframe with the sentiment dictionary, here using the 'nrc' sentiment dictionary.
+  count(date, index = order %/% 1000, sentiment) %>% # Create an index for each group of 1000 rows by date 'date' and 'order', and group the results by emotion 'sentiment'.
+  spread(sentiment, n, fill = 0) %>% # Convert the different sentiment values of the 'sentiment' column to column names, with vacancies populated with zeroes.
+  mutate(sentiment = positive - negative) # Add a new column, `sentiment`, to calculate the number of positive sentiments minus the number of negative sentiments.
+
+# The functionality of the code below is the same as above.
+newspaper_gb_nrc_sentiment <- newspaper_gb_title_tidy %>%
+  inner_join(get_sentiments("nrc")) %>%
+  count(date, index = order %/% 1000, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+```
+
+```{r}
+# Creating a chart of sentiment scores over time in Chinese news headline data.
+newspaper_cn_nrc_sentiment %>% # Create a chart.
+  ggplot(aes(date, sentiment)) + # The x-axis is the date and the y-axis is the sentiment score.
+  geom_point(alpha=0.5) + # Add scatter with a transparency of 0.5.
+  geom_smooth(method= loess, alpha=0.25) # Add a smoothing curve layer to show the trend of the data using locally weighted regression smoothing, transparency set to 0.25.
+```
+
+```{r}
+# Creating a chart of sentiment scores over time in Britain news headline data.
+# The functionality of the code below is the same as above.
+newspaper_gb_nrc_sentiment %>% 
+  ggplot(aes(date, sentiment)) +
+  geom_point(alpha=0.5) +
+  geom_smooth(method= loess, alpha=0.25)
+```
+
+```{r}
+# Combined into a single chart presentation.
+newspaper_cn_nrc_sentiment$source <- "China" # Add a new column to China's news sentiment analysis data set
+newspaper_gb_nrc_sentiment$source <- "UK" # Add a new column to Britain's news sentiment analysis data set
+combined_sentiment <- rbind(newspaper_cn_nrc_sentiment, newspaper_gb_nrc_sentiment) # Merge China and UK data frames.
+
+# Create a chart.
+combined_sentiment %>% 
+  ggplot(aes(x = date, y = sentiment, color = source)) + # Set the horizontal axis to the date, the vertical axis to the sentiment index, and the color to differentiate the source.
+  geom_point(alpha = 0.5) + # Add points, transparency is 0.5.
+  geom_smooth(method = "loess", alpha = 0.25) +# Add a LOESS smoothing curve with a transparency of 0.25.
+  scale_color_manual(values = c("China" = "darkred", "UK" = "darkblue")) +# Manually set the color of each source.
+  labs(title = "Sentiment analysis of the New York Times news headlines about both China and Britain in 2023 using the NRC dictionary", # Set the title.
+       x = "Date", # Set the horizontal coordinate to the date.
+       y = "Sentiment Index", # Set the vertical coordinate to the sentiment index.
+       color = "Source") + # Set the color legend.
+  theme_minimal() + # Use the minimalist theme.
+  theme(plot.title = element_text(size = 7)) # Set the font size of the chart title.
+```
+
+```{r}
+# Plot charts only shows lines.
+# The functionality of the code below is the same as above.
+combined_sentiment %>%
+  ggplot(aes(x = date, y = sentiment, color = source)) +
+  geom_smooth(method = "loess", alpha = 0.25) +
+  scale_color_manual(values = c("China" = "darkred", "UK" = "darkblue")) +
+  labs(title = "Sentiment analysis of the New York Times news headlines about both China and Britain in 2023 using the NRC dictionary",
+       x = "Date",
+       y = "Sentiment Index",
+       color = "Source") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 7))
+```
+
+```{r}
+# Choose to use Bing dictionary.
+newspaper_cn_sentiment <- newspaper_cn_title_tidy %>% # The data is processed and written to newspaper_cn_sentiment.
+  inner_join(get_sentiments("bing")) %>% # Inline the 'newspaper_cn_title_tidy' dataframe with the sentiment dictionary, here using the 'Bing' sentiment dictionary.
+  count(date, index = order %/% 1000, sentiment) %>% # Create an index for each group of 1000 rows by date 'date' and 'order', and group the results by emotion 'sentiment'.
+  spread(sentiment, n, fill = 0) %>% # Convert the different sentiment values of the 'sentiment' column to column names, with vacancies populated with zeroes.
+  mutate(sentiment = positive - negative, source = "China") # Add a new column, `sentiment`, to calculate the number of positive sentiments minus the number of negative sentiments.
+
+# The functionality of the code below is the same as above.
+newspaper_gb_sentiment <- newspaper_gb_title_tidy %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(date, index = order %/% 1000, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative, source = "UK")
+
+# Merge data.
+combined_sentiment <- rbind(newspaper_cn_sentiment, newspaper_gb_sentiment)
+
+# Create a chart.
+# The functionality of the code below is the same as above.
+combined_sentiment %>%
+  ggplot(aes(x = date, y = sentiment, color = source)) +
+  geom_point(alpha=0.5) +
+  geom_smooth(method = "loess", alpha = 0.25) +
+  scale_color_manual(values = c("China" = "darkred", "UK" = "darkblue")) +  # 指定颜色
+  labs(title = "Sentiment analysis of the New York Times news headlines about both China and Britain in 2023 using the Bing dictionary",
+       y = "Bing Sentiment", color = "Source") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 7))
+```
+
+```{r}
+# Reformat the text
+newspaper_cn$date <- as.Date(newspaper_cn$newspaper_time) # Convert the data to date format.
+newspaper_cn_corpus <- corpus(newspaper_cn, text_field = "newspaper_title", docvars = ("date")) # Create a text corpus.
+
+# The functionality of the code below is the same as above.
+newspaper_gb$date <- as.Date(newspaper_gb$newspaper_time)
+newspaper_gb_corpus <- corpus(newspaper_gb, text_field = "newspaper_title", docvars = ("date"))
+```
+
+```{r}
+# Split words and remove all punctuation marks.
+toks_news_cn <- tokens(newspaper_cn_corpus, remove_punct = TRUE)
+
+# The functionality of the code below is the same as above.
+toks_news_gb <- tokens(newspaper_gb_corpus, remove_punct = TRUE)
+```
+
+```{r}
+# Use the data_dictionary_LSD2015 included with quanteda.
+data_dictionary_LSD2015_pos_neg <- data_dictionary_LSD2015[1:2] # Select the first two elements of the dictionary.
+toks_news_cn_lsd <- tokens_lookup(toks_news_cn, dictionary = data_dictionary_LSD2015_pos_neg) # Apply data to the sentiment dictionary to determine positive or negative categories.
+
+# The functionality of the code below is the same as above.
+data_dictionary_LSD2015_pos_neg <- data_dictionary_LSD2015[1:2]
+toks_news_gb_lsd <- tokens_lookup(toks_news_gb, dictionary = data_dictionary_LSD2015_pos_neg)
+```
+
+```{r}
+# Convert to Document-Word Frequency Matrix.
+dfmat_news_cn_lsd <- dfm(toks_news_cn_lsd) %>% 
+  dfm_group(groups = date) # The resulting matrix is grouped by 'date'
+```
+
+```{r}
+# The functionality of the code below is the same as above.
+dfmat_news_gb_lsd <- dfm(toks_news_gb_lsd) %>% 
+  dfm_group(groups = date)
+```
+
+```{r}
+# Extract data from the document-word frequency matrix, create a sentiment time-series data frame, and plot it.
+negative <- dfmat_news_cn_lsd@x[1:121] # Extract the frequency of negative emotional vocabulary.
+positive <- dfmat_news_cn_lsd@x[122:242] # Extract the frequency of positive emotional vocabulary.
+date <- dfmat_news_cn_lsd@Dimnames$docs # Withdrawal date.
+tidy_sent <- as.data.frame(cbind(negative, positive, date)) # Combine negative and positive sentiment counts and dates into one data frame.
+tidy_sent$negative <- as.numeric(tidy_sent$negative) # Convert the data type of the negative sentiment count to numeric.
+tidy_sent$positive <- as.numeric(tidy_sent$positive)# Convert the data type of the positive sentiment count to numeric.
+tidy_sent$sentiment <- tidy_sent$positive - tidy_sent$negative # Calculate the sentiment score: Positive Score - Negative Score.
+tidy_sent$date <- as.Date(tidy_sent$date) # Convert date strings to date format.
+ggplot(tidy_sent, aes(x = date, y = sentiment)) + # Plotting trends in sentiment over date.
+  geom_line() +
+  geom_smooth(method = "loess", span = 0.3) # Add LOESS smoothing curves
+```
+
+```{r}
+# The functionality of the code below is the same as above.
+negative <- dfmat_news_gb_lsd@x[1:121]
+positive <- dfmat_news_gb_lsd@x[122:242]
+date <- dfmat_news_gb_lsd@Dimnames$docs
+tidy_sent <- as.data.frame(cbind(negative, positive, date))
+tidy_sent$negative <- as.numeric(tidy_sent$negative)
+tidy_sent$positive <- as.numeric(tidy_sent$positive)
+tidy_sent$sentiment <- tidy_sent$positive - tidy_sent$negative
+tidy_sent$date <- as.Date(tidy_sent$date)
+ggplot(tidy_sent, aes(x = date, y = sentiment)) +
+  geom_line() +
+  geom_smooth(method = "loess", span = 0.3)
+```
+
+```{r}
+# Import some packages to support research
+library(readr) # More informative and easy way to import data.
+library(stringr) # To handle text elements.
+library(tidytext) # Includes set of functions useful for manipulating text.
+library(quanteda) # Includes functions to implement Lexicoder.
+library(textdata) # Manage text data sets.
+```
+
+```{r}
+# Import the data downloaded in 1DataCollection.Rmd.
+newspaper_cn <- readRDS("cn2023news.rds") # Import the news reported by the New York Times 2023 on China.
+newspaper_gb <- readRDS("gb2023news.rds") # Import the news reported by the New York Times 2023 on UK.
+```
+
+```{r}
+# Retain the variables needed for research.
+newspaper_cn <- newspaper_cn %>% # Use newspaper_cn data frame.
+  select(abstract, pub_date) %>% # Select the abstract and pub_date columns in the data frame.
+  rename(newspaper_abstract = abstract, # Rename the abstract column to newspaper_abstract.
+         newspaper_time = pub_date) # Rename the pub_date column to newspaper_time.
+
+# The functionality of the code below is the same as above.
+newspaper_gb <- newspaper_gb %>%
+  select(abstract, pub_date) %>% 
+  rename(newspaper_abstract = abstract,
+         newspaper_time = pub_date)
+```
+
+```{r}
+# Processing data into a neat format.
+newspaper_cn_abstract_tidy <- newspaper_cn %>% # Use the newspaper_cn data framework and save to newspaper_cn_abstract_tidy.
+  mutate(desc = tolower(newspaper_abstract)) %>% # Add a new column desc to the dataframe, which is the lowercase version of the newspaper_abstract column.
+  unnest_tokens(word, desc) %>% # Use the unnest_tokens function to split the text in the desc column into words and store the result in a new column word.
+  filter(str_detect(word, "[a-z]")) # Filter word columns for rows containing only English letters.
+
+# The functionality of the code below is the same as above.
+newspaper_gb_abstract_tidy <- newspaper_gb %>%
+  mutate(desc = tolower(newspaper_abstract)) %>% 
+  unnest_tokens(word, desc) %>%
+  filter(str_detect(word, "[a-z]"))
+```
+
+```{r}
+# Removing stop words.
+newspaper_cn_abstract_tidy <- newspaper_cn_abstract_tidy %>% # Use the newspaper_cn_abstract_tidy data framework.
+    filter(!word %in% stop_words$word) # Use the filter function to exclude words that appear in the word column of the stop_words data frame.
+
+# The functionality of the code below is the same as above.
+newspaper_gb_abstract_tidy <- newspaper_gb_abstract_tidy %>%
+    filter(!word %in% stop_words$word) 
+```
+
+```{r}
+# Arrange the data in ascending order of date.
+newspaper_cn_abstract_tidy$date <- as.Date(newspaper_cn_abstract_tidy$newspaper_time) # Convert the data in column 'newspaper_time' to date format and create new column 'date'
+newspaper_cn_abstract_tidy <- newspaper_cn_abstract_tidy %>% # Use the newspaper_cn_abstract_tidy data framework.
+  arrange(date) # Sort the data frame according to the 'date' column.
+newspaper_cn_abstract_tidy$order <- 1:nrow(newspaper_cn_abstract_tidy) # Add an 'order' column to the data frame, with values starting at 1 and continuing backwards.
+
+# The functionality of the code below is the same as above.
+newspaper_gb_abstract_tidy$date <- as.Date(newspaper_gb_abstract_tidy$newspaper_time)
+newspaper_gb_abstract_tidy <- newspaper_gb_abstract_tidy %>%
+  arrange(date)
+newspaper_gb_abstract_tidy$order <- 1:nrow(newspaper_gb_abstract_tidy)
+```
+
+```{r}
+# Choose to use Bing dictionary.
+newspaper_cn_sentiment <- newspaper_cn_abstract_tidy %>% # The data is processed and written to newspaper_cn_sentiment.
+  inner_join(get_sentiments("bing")) %>% # Inline the 'newspaper_cn_abstract_tidy' dataframe with the sentiment dictionary, here using the 'Bing' sentiment dictionary.
+  count(date, index = order %/% 1000, sentiment) %>% # Create an index for each group of 1000 rows by date 'date' and 'order', and group the results by emotion 'sentiment'.
+  spread(sentiment, n, fill = 0) %>% # Convert the different sentiment values of the 'sentiment' column to column names, with vacancies populated with zeroes.
+  mutate(sentiment = positive - negative, source = "China") # Add a new column, `sentiment`, to calculate the number of positive sentiments minus the number of negative sentiments.
+
+# The functionality of the code below is the same as above.
+newspaper_gb_sentiment <- newspaper_gb_abstract_tidy %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(date, index = order %/% 1000, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative, source = "UK")
+
+# Merge data.
+combined_sentiment <- rbind(newspaper_cn_sentiment, newspaper_gb_sentiment)
+
+# Create a chart.
+# The functionality of the code below is the same as above.
+combined_sentiment %>%
+  ggplot(aes(x = date, y = sentiment, color = source)) +
+  geom_point(alpha=0.5) +
+  geom_smooth(method = "loess", alpha = 0.25) +
+  scale_color_manual(values = c("China" = "darkred", "UK" = "darkblue")) +  # 指定颜色
+  labs(title = "Sentiment analysis of the New York Times news abstracts about both China and Britain in 2023 using the Bing dictionary",
+       y = "Bing Sentiment", color = "Source") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 7))
+```
+
+```{r}
+# Import some packages to support research
+library(tidyverse) # Load dplyr, ggplot2 and others.
+library(stringr) # To handle text elements.
+library(tidytext) # Includes set of functions useful for manipulating text.
+library(scales) # Customize and optimize the scale, color and label formatting of graphics.
+library(ggthemes) # To make plots look nice.
+```
+
+```{r}
+# Import the data downloaded in 1DataCollection.Rmd.
+newspaper_cn <- readRDS("cn2023news.rds") # Import the news reported by the New York Times 2023 on China.
+newspaper_gb <- readRDS("gb2023news.rds") # Import the news reported by the New York Times 2023 on UK.
+```
+
+```{r}
+# Date Filtering.
+newspaper_cn <- newspaper_cn %>%
+  filter(pub_date >= as.Date("2023-10-01") & pub_date <= as.Date("2023-12-31")) # Only keep the 3 months needed for the research.
+
+# The functionality of the code below is the same as above.
+newspaper_gb <- newspaper_gb %>%
+  filter(pub_date >= as.Date("2023-10-01") & pub_date <= as.Date("2023-12-31"))
+```
+
+```{r}
+# Add source columns in preparation for consolidation.
+newspaper_cn <- newspaper_cn %>% mutate(source = 86) # Add a new column after the data on reports on China, number 86.
+newspaper_gb <- newspaper_gb %>% mutate(source = 44) # Add a new column after the data on reports on the UK, number 44.
+
+# Merge two data frameworks.
+combined_newspaper <- bind_rows(newspaper_cn, newspaper_gb) # Two data frames are merged into one.
+```
+
+```{r}
+# Cleaning data.
+combined_newspaper_tidy <- combined_newspaper %>%
+  unnest_tokens(word, headline) %>% # Separate the words in a sentence and store them.
+  anti_join(stop_words) # Remove all stop words.
+```
+
+```{r}
+# Word frequency calculation.
+news_freq <- combined_newspaper_tidy %>%
+  mutate(sourcenumber = ifelse(source==44, "UK", "China")) %>% # Tagged with a number based on the source, if the source code is 44, it is tagged as 'UK', otherwise it is 'China'
+  mutate(word = str_extract(word, "[a-z']+")) %>% # Use regular expressions to extract lowercase letters and apostrophes from words, ignoring other characters.
+  count(sourcenumber, word) %>% # Word frequency calculation.
+  group_by(sourcenumber) %>% # Grouping by source.
+  mutate(proportion = n / sum(n)) %>% # Calculate the proportion of each word within its grouping.
+  select(-n) %>% # Remove the original count column.
+  spread(sourcenumber, proportion) # Reshape the data into a wide format with one column scaled for each source number.
+
+# Creating Charts.
+ggplot(news_freq, aes(x = UK, y = China, color = abs(UK - China))) +
+  geom_abline(color = "gray40", lty = 2) +
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) +
+  geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
+  scale_x_log10(labels = percent_format()) +
+  scale_y_log10(labels = percent_format()) +
+  scale_color_gradient(limits = c(0, 0.001), low = "darkslategray4", high = "gray75") +
+  theme_tufte(base_family = "Helvetica") +
+  theme(legend.position="none", 
+        strip.background = element_blank(), 
+        strip.text.x = element_blank()) +
+  labs(x = "UK", y = "China") +
+  coord_equal()
+
+# Calculate and sort word frequencies.
+word_counts <- combined_newspaper_tidy %>%
+  count(word, sort = TRUE) # Calculate the number of occurrences of all words and sort them in descending order.
+
+# Print the first 10 most common words.
+print(head(word_counts, 10))
+```
