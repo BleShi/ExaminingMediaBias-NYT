@@ -1,0 +1,55 @@
+---
+title: "Data Collection from the New York Times API"
+author: "B238026"
+date: "2024-03-24"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r}
+# Import some packages to support research
+library(httr) # Used to build and send HTTP requests
+library(lubridate) # Used to process date and time data
+```
+
+```{r}
+# Initialize an empty data frame to store title, abstracts and pub_dates
+newdataset <- data.frame(headline = character(), abstract = character(), pub_date = character(), stringsAsFactors = FALSE)
+```
+
+```{r}
+# Set start and end dates
+start_date <- as.Date("2023-01-01") # In order to make it easier to knit into a pdf, so it is only set to get 2 days of data.
+end_date <- as.Date("2023-01-02") # It can be adjusted according to actual needs.
+```
+
+```{r}
+# Loop for data acquisition
+current_date <- start_date
+while (current_date <= end_date) { # Traverse every day
+  
+  formatted_date <- format(current_date, "%Y%m%d") # Format date
+
+  # Generate API URL and query only one day's data at a time.
+  api_url <- paste0("https://api.nytimes.com/svc/search/v2/articlesearch.json?q=Britain&facet_fields=source&facet=true&begin_date=", formatted_date, "&end_date=", formatted_date, "&api-key=X3GWi65A63bxrhGA3pnrhvPeedlfQkl6") #The content after articlesearch.json?q= can be modified to the desired keywords, such as Britain and China.
+
+  response <- GET(api_url) # Initiate GET requests
+  
+  content_data <- content(response, as = "parsed", type = "application/json") # Parse the response content as a dataframe
+
+  num_docs <- length(content_data$response$docs) # Get the number of documents on the current page
+  
+  for (i in 1:num_docs) { # Loop through all docs elements on the current page
+    new_headline <- content_data$response$docs[[i]]$headline$main # Extract title from the data obtained by the api
+    new_abstract <- content_data$response$docs[[i]]$abstract # Extract abstract from the data obtained by the api
+    new_pub_date <- content_data$response$docs[[i]]$pub_date # Extract publish date from the data obtained by the api
+
+    newdataset <- rbind(newdataset, data.frame(headline = new_headline, abstract = new_abstract, pub_date = new_pub_date, stringsAsFactors = FALSE)) # append new headline, abstract and publish date to data frame
+  }
+  
+  Sys.sleep(13) # Pause for 13 seconds to comply with API requirements
+  
+  current_date <- current_date + days(1) # Update the date to the next day
+}
+```
